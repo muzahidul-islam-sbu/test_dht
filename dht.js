@@ -11,8 +11,8 @@ async function createNode() {
             listen: ['/ip4/0.0.0.0/tcp/0']
         },
         transports: [tcp()],
-        streamMuxer: [yamux()],
-        connEncryption: [noise()],
+        streamMuxers: [yamux()],
+        connectionEncryption: [noise()],
         services: {
             dht: kadDHT({
                 kBucketSize: 20,
@@ -23,13 +23,12 @@ async function createNode() {
                 list: [
                     // bootstrap node here is generated from dig command                    
                     '/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
-                    '/ip4/172.174.239.70/tcp/57777/p2p/12D3KooWJETPAYgn5rB53LvaSKixiwg4giSeinoB3LVAZP3UgGLd'
+                    // '/ip4/172.174.239.70/tcp/57777/p2p/12D3KooWJETPAYgn5rB53LvaSKixiwg4giSeinoB3LVAZP3UgGLd'
                 ]
             })
         ]
     });
 
-    await node.start();
     return node;
 }
 
@@ -45,17 +44,19 @@ async function main() {
     
     // Log peer connection events
     node.addEventListener('peer:connect', (connection) => {
-        console.log('Connected to peer:', connection, connection.detail.id, connection.detail.multiaddrs);
+        console.log('Connected to peer:', connection, connection.detail, connection.detail.multiaddrs);
     });
     
     console.log('PeerID', node.peerId.toString());
     node.getMultiaddrs().forEach((addr) => {
         console.log(addr.toString());
     });
-
+    
     // Start the DHT
+    await node.services.dht.setMode('server');
     await node.services.dht.start();
-
+    await node.start();
+    
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout
