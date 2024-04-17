@@ -21,8 +21,9 @@ async function createNode() {
         peerDiscovery: [
             bootstrap({
                 list: [
-                    // bootstrap node here is generated from dig command
-                    '/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt'
+                    // bootstrap node here is generated from dig command                    
+                    '/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+                    '/ip4/172.174.239.70/tcp/57777/p2p/12D3KooWJETPAYgn5rB53LvaSKixiwg4giSeinoB3LVAZP3UgGLd'
                 ]
             })
         ]
@@ -32,27 +33,94 @@ async function createNode() {
     return node;
 }
 
+import readline from 'readline'
 async function main() {
     const node = await createNode();
+    const discoveredPeerIds = []
+    // Log peer discovery events
+    node.addEventListener('peer:discovery', (connection) => {
+        console.log('Discovered peer:' ,connection.detail.id, connection.detail.multiaddrs);
+        discoveredPeerIds.push(connection.detail.id)
+    });
+    
+    // Log peer connection events
+    node.addEventListener('peer:connect', (connection) => {
+        console.log('Connected to peer:', connection, connection.detail.id, connection.detail.multiaddrs);
+    });
+    
+    console.log('PeerID', node.peerId.toString());
+    node.getMultiaddrs().forEach((addr) => {
+        console.log(addr.toString());
+    });
 
     // Start the DHT
     await node.services.dht.start();
 
-    // Put a key-value pair into the DHT
-    const key = new Uint8Array(Buffer.from('hello')); 
-    const value = new Uint8Array(Buffer.from('world')); 
-    let retrievedValue = node.services.dht.put(key, value);
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    rl.setPrompt('> ');
+
+    rl.prompt();
+
+    rl.on('line', async (input) => {
+        const [command, ...args] = input.trim().split(' ');
+        switch (command) {
+            case 'put':
+                if (args.length !== 2) {
+                    console.error('Usage: put <key> <value>');
+                    break;
+                }
+                await putKeyValue(node, args[0], args[1]);
+                break;
+            case 'get':
+                if (args.length !== 1) {
+                    console.error('Usage: get <key>');
+                    break;
+                }
+                await getValue(node, args[0]);
+                break;
+            default:
+                console.error('Unknown command:', command);
+                break;
+        }
+        rl.prompt();
+    });
+
+    process.on('SIGTERM', () => {
+        rl.close();
+        node.stop();
+    });
+
+    process.on('SIGINT', () => {
+        rl.close();
+        node.stop();
+    });
+
+    rl.on('close', () => {
+        console.log('Exiting...');
+        process.exit(0);
+    });
+}
+
+async function putKeyValue(node, key, value) {
+    const keyUint8Array = new Uint8Array(Buffer.from(key));
+    const valueUint8Array = new Uint8Array(Buffer.from(value));
+    let retrievedValue = node.services.dht.put(keyUint8Array, valueUint8Array);
     for await (const queryEvent of retrievedValue) {
         console.log('put' , queryEvent)
     }
-    // Get the value using the key
-    retrievedValue = node.services.dht.get(key);
-    for await (const queryEvent of retrievedValue) {
-        console.log('get', queryEvent)
-    }
+    console.log(`Key "${key}" with value "${value}" successfully added to the DHT.`);
+}
 
-    process.on('SIGTERM', () => node.stop())
-    process.on('SIGINT', () => node.stop())
+async function getValue(node, key) {
+    const keyUint8Array = new Uint8Array(Buffer.from(key));
+    let retrievedValue = node.services.dht.get(keyUint8Array);
+    for await (const queryEvent of retrievedValue) {
+        console.log('get' , queryEvent)
+    }
 }
 
 main();

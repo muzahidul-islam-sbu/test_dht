@@ -15,6 +15,7 @@
     "@libp2p/bootstrap": "^10.0.20",
     "@libp2p/kad-dht": "^12.0.13",
     "@libp2p/tcp": "^9.0.22",
-    "libp2p": "^1.4.2"
+    "libp2p": "^1.4.2",
+    "yargs": "^17.7.2"
   }
 }
