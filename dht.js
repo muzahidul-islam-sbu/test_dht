@@ -1,7 +1,8 @@
 import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
+import { mdns } from '@libp2p/mdns'
 import { noise } from '@chainsafe/libp2p-noise'
-import { kadDHT } from '@libp2p/kad-dht'
+import { kadDHT, removePrivateAddressesMapper, EventTypes, removePublicAddressesMapper } from '@libp2p/kad-dht'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { bootstrap } from '@libp2p/bootstrap'
 
@@ -16,16 +17,20 @@ async function createNode() {
         services: {
             dht: kadDHT({
                 kBucketSize: 20,
+                allowQueryWithZeroPeers: true,
+                querySelfInterval: 10,
+                peerInfoMapper: removePublicAddressesMapper
             })
         },
         peerDiscovery: [
-            bootstrap({
-                list: [
-                    // bootstrap node here is generated from dig command                    
-                    '/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
-                    // '/ip4/172.174.239.70/tcp/57777/p2p/12D3KooWJETPAYgn5rB53LvaSKixiwg4giSeinoB3LVAZP3UgGLd'
-                ]
-            })
+            mdns(),
+            // bootstrap({
+            //     list: [
+            //         // bootstrap node here is generated from dig command                    
+            //         // '/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+            //         '/ip4/127.0.0.1/tcp/53528/p2p/12D3KooWBjWDPwMH7qkejjZWD6LjNM2HTyZ78zTvF3Gwt14oLBJA'
+            //     ]
+            // })
         ]
     });
 
@@ -43,9 +48,20 @@ async function main() {
     });
     
     // Log peer connection events
-    node.addEventListener('peer:connect', (connection) => {
+    node.addEventListener('peer:connect', async (connection) => {
         console.log('Connected to peer:', connection, connection.detail, connection.detail.multiaddrs);
+        
+        let retrievedValue = node.services.dht.findPeer(connection.detail);
+        for await (const queryEvent of retrievedValue) {
+            console.log('connect' , queryEvent)
+        }
+
+        await node.dial(connection.detail)
     });
+
+    node.addEventListener(EventTypes.VALUE, () => {
+        console.log('found')
+    })
     
     console.log('PeerID', node.peerId.toString());
     node.getMultiaddrs().forEach((addr) => {
@@ -75,12 +91,14 @@ async function main() {
                     break;
                 }
                 await putKeyValue(node, args[0], args[1]);
+                await node.services.dht.refreshRoutingTable()
                 break;
             case 'get':
                 if (args.length !== 1) {
                     console.error('Usage: get <key>');
                     break;
                 }
+                await node.services.dht.refreshRoutingTable()
                 await getValue(node, args[0]);
                 break;
             default:
@@ -99,7 +117,7 @@ async function main() {
         rl.close();
         node.stop();
     });
-
+    // node.services.dht.put(a, b, {useNetwork: true, useCache: false})
     rl.on('close', () => {
         console.log('Exiting...');
         process.exit(0);
@@ -107,9 +125,9 @@ async function main() {
 }
 
 async function putKeyValue(node, key, value) {
-    const keyUint8Array = new Uint8Array(Buffer.from(key));
-    const valueUint8Array = new Uint8Array(Buffer.from(value));
-    let retrievedValue = node.services.dht.put(keyUint8Array, valueUint8Array);
+    const keyUint8Array = new TextEncoder('utf8').encode(key);
+    const valueUint8Array = new TextEncoder('utf8').encode(value);
+    let retrievedValue = node.services.dht.put(keyUint8Array, valueUint8Array ,{useNetwork: true, useCache: false});
     for await (const queryEvent of retrievedValue) {
         console.log('put' , queryEvent)
     }
@@ -117,8 +135,13 @@ async function putKeyValue(node, key, value) {
 }
 
 async function getValue(node, key) {
-    const keyUint8Array = new Uint8Array(Buffer.from(key));
-    let retrievedValue = node.services.dht.get(keyUint8Array);
+    const keyUint8Array =  new TextEncoder('utf8').encode(key);
+    let retrievedValue
+    retrievedValue = node.peerRouting.getClosestPeers(keyUint8Array)
+    for await (const queryEvent of retrievedValue) {
+        console.log('peerRouting' , queryEvent)
+    }
+    retrievedValue = node.services.dht.get(keyUint8Array,  {useNetwork: true, useCache: false});
     for await (const queryEvent of retrievedValue) {
         console.log('get' , queryEvent)
     }
