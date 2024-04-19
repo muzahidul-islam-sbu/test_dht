@@ -40,9 +40,11 @@ async function createNode() {
 }
 
 import readline from 'readline'
+import { getPublicMultiaddr } from './util.js'
+let discoveredPeers = []
+const dht = {};
 async function main() {
     const node = await createNode();
-    const discoveredPeers = []
     // Log peer discovery events
     // node.addEventListener('peer:discovery', async (connection) => {
     //     console.log('Discovered peer:', connection.detail.id, connection.detail.multiaddrs);
@@ -55,6 +57,7 @@ async function main() {
 
 
     console.log('PeerID', node.peerId.toString());
+    console.log(await getPublicMultiaddr(node))
     node.getMultiaddrs().forEach((addr) => {
         console.log(addr.toString());
     });
@@ -65,12 +68,12 @@ async function main() {
     await node.start();
 
     const data = {
-        multi: node.getMultiaddrs()[0].toString(),
+        multi: await getPublicMultiaddr(node),
         http: 'http addr',
         grpc: 'grpc addr'
     }
 
-    await node.handle('/example/protocol', async ({stream}) => {
+    await node.handle('/bootstrap', async ({ stream }) => {
         let withBootstrap = JSON.parse(JSON.stringify(discoveredPeers));
         withBootstrap.push(data)
         console.log(JSON.stringify(withBootstrap))
@@ -98,8 +101,8 @@ async function main() {
     })
     // Dial to node2
     try {
-        const stream = await node.dialProtocol(multiaddr('/ip4/127.0.0.1/tcp/60173/p2p/12D3KooWR6LEhbm89kKgDciA7GbxapRK99yuWZkrzaUDdqJhXXJi'), '/example/protocol');
-    
+        const stream = await node.dialProtocol(multiaddr('/ip4/127.0.0.1/tcp/63759/p2p/12D3KooWBdMHzcughjrfmAbYxuPQQGJVKa39ZH4xySXd5G5uq8ZY'), '/bootstrap');
+
         // Write data to the stream
         await pipe(
             [JSON.stringify(data)],
@@ -108,7 +111,7 @@ async function main() {
             // Encode with length prefix (so receiving side knows how much data is coming)
             (source) => lp.encode(source),
             stream.sink);
-    
+
         // Read data from the stream
         await pipe(
             stream.source,
@@ -118,21 +121,61 @@ async function main() {
             (source) => map(source, (buf) => uint8ArrayToString(buf.subarray())),
             async function (source) {
                 for await (var message of source) {
-                    discoveredPeers.concat(JSON.parse(message))
+                    discoveredPeers = discoveredPeers.concat(JSON.parse(message))
                     console.log('Discovered:', message)
                 }
             }
         )
-    } catch (err) {}
-    // const bootstrapMulti = multiaddr('/dnsaddr/sg1.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt')
-    // node.handle()
-    // const { stream, protocol } = await node.dialProtocol(bootstrapMulti, '/bootstrap/1')
-    // const data = JSON.stringify({
-    //     grpc: 'grpc addr',
-    //     multi: node.getMultiaddrs()[0].toString(),
-    //     http: 'http addr'
-    // })
-    // pipe([data], stream)
+    } catch (err) { }
+
+    await node.handle('/putDHT', async ({ stream }) => {
+        pipe(
+            stream.source,
+            // Decode length-prefixed data
+            (source) => lp.decode(source),
+            // Turn buffers into strings
+            (source) => map(source, (buf) => uint8ArrayToString(buf.subarray())),
+            async function (source) {
+                for await (var message of source) {
+                    const {key, val} = JSON.parse(message)
+                    if (!dht.hasOwnProperty(key)) { dht[key] = new Set() }
+                    dht[key].add(JSON.stringify(val))
+
+                    console.log('Put to DHT:', message)
+                }
+            }
+        )
+    })
+
+    await node.handle('/getDHT', async ({ stream }) => {
+        let key;
+        await pipe(
+            stream.source,
+            // Decode length-prefixed data
+            (source) => lp.decode(source),
+            // Turn buffers into strings
+            (source) => map(source, (buf) => uint8ArrayToString(buf.subarray())),
+            async function (source) {
+                for await (var message of source) {
+                    key = JSON.parse(message)['key']
+                }
+            }
+        )
+        while (!key) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        const arrayFromSet = [...dht[key]]
+        const val = arrayFromSet || ''
+        await pipe(
+            [JSON.stringify({key: val})],
+            // Turn strings into buffers
+            (source) => map(source, (string) => uint8ArrayFromString(string)),
+            // Encode with length prefix (so receiving side knows how much data is coming)
+            (source) => lp.encode(source),
+            stream.sink,
+        );
+        console.log('Retrieved from DHT:', key, dht[key])
+    })
 
     const rl = readline.createInterface({
         input: process.stdin,
@@ -183,29 +226,79 @@ async function main() {
         console.log('Exiting...');
         process.exit(0);
     });
+    // node.peerId
 }
 
 async function putKeyValue(node, key, value) {
-    const keyUint8Array = new TextEncoder('utf8').encode(key);
-    const valueUint8Array = new TextEncoder('utf8').encode(value);
-    let retrievedValue = node.services.dht.put(keyUint8Array, valueUint8Array, { useNetwork: true, useCache: false });
-    for await (const queryEvent of retrievedValue) {
-        console.log('put', queryEvent)
+    if (!dht.hasOwnProperty(key)) { dht[key] = new Set() }
+
+    const val ={ peerId: node.peerId.toString(), data: value }
+    dht[key].add(JSON.stringify(val))
+    
+    console.log('discovered peers:', discoveredPeers)
+    for (var peer of discoveredPeers) {
+        console.log('starting to put in peer DHT', peer['multi'])
+        const multiAddr = multiaddr(peer['multi'])
+        try {
+            const stream = await node.dialProtocol(multiAddr, '/putDHT');
+            // Write data to the stream
+            await pipe(
+                [JSON.stringify({key, val})],
+                // Turn strings into buffers
+                (source) => map(source, (string) => uint8ArrayFromString(string)),
+                // Encode with length prefix (so receiving side knows how much data is coming)
+                (source) => lp.encode(source),
+                stream.sink);
+            console.log('Put in', peer['multi'])
+        } catch (err) {console.log('wat')}
     }
-    console.log(`Key "${key}" with value "${value}" successfully added to the dht.`);
 }
 
-async function getValue(node, key) {
-    const keyUint8Array = new TextEncoder('utf8').encode(key);
-    let retrievedValue
-    retrievedValue = node.peerRouting.getClosestPeers(keyUint8Array)
-    for await (const queryEvent of retrievedValue) {
-        console.log('peerRouting', queryEvent)
+async function getValue(node, keyOrig) {
+    if (!dht.hasOwnProperty(keyOrig)) { dht[keyOrig] = new Set() }
+
+    for (var peer of discoveredPeers) {
+        console.log('starting to get from peer DHT', peer['multi'])
+        const multiAddr = multiaddr(peer['multi'])
+        try {
+            const stream = await node.dialProtocol(multiAddr, '/getDHT');
+            // Write data to the stream
+            await pipe(
+                [JSON.stringify({key: keyOrig})],
+                // Turn strings into buffers
+                (source) => map(source, (string) => uint8ArrayFromString(string)),
+                // Encode with length prefix (so receiving side knows how much data is coming)
+                (source) => lp.encode(source),
+                stream.sink
+            );
+            // console.log('Requested from', peer['multi'], keyOrig)
+            let val;
+            // Read data from the stream
+            await pipe(
+                stream.source,
+                // Decode length-prefixed data
+                (source) => lp.decode(source),
+                // Turn buffers into strings
+                (source) => map(source, (buf) => uint8ArrayToString(buf.subarray())),
+                async function (source) {
+                    for await (var message of source) {
+                        val = 1;
+                        if (message == '') {break}
+                        let {key} = JSON.parse(message) 
+                        key = new Set(key);
+                        const combined =  new Set([...dht[keyOrig], ...key])
+                        dht[keyOrig] = combined
+                        // console.log('Added from', peer['multi'], key)
+                    }
+                }
+            )
+            while (val === undefined) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } catch (err) {console.log(err)}
     }
-    retrievedValue = node.services.dht.get(keyUint8Array, { useNetwork: true, useCache: false });
-    for await (const queryEvent of retrievedValue) {
-        console.log('get', queryEvent)
-    }
+    console.log(dht[keyOrig])
+
 }
 
 main();
