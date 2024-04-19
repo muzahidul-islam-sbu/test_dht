@@ -101,7 +101,7 @@ async function main() {
     })
     // Dial to node2
     try {
-        const stream = await node.dialProtocol(multiaddr('/ip4/127.0.0.1/tcp/63759/p2p/12D3KooWBdMHzcughjrfmAbYxuPQQGJVKa39ZH4xySXd5G5uq8ZY'), '/bootstrap');
+        const stream = await node.dialProtocol(multiaddr('/ip4/52.191.209.254/tcp/61278/p2p/12D3KooWHVdctPi2Sj3q3NQatGWaWvX4pwbXqd7qU5XDZYVMug3w'), '/bootstrap');
 
         // Write data to the stream
         await pipe(
@@ -164,7 +164,9 @@ async function main() {
         while (!key) {
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        const arrayFromSet = [...dht[key]]
+        let arrayFromSet;
+        if (dht.hasOwnProperty(key)) {arrayFromSet = [...dht[key]]}
+        else {arrayFromSet = ''}
         const val = arrayFromSet || ''
         await pipe(
             [JSON.stringify({key: val})],
