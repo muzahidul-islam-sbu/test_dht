@@ -182,18 +182,19 @@ async function getLocal(node, key) {
 // const hash = createHash('sha256').update('test').digest()
 // const hashk = '/pk/' + hash;
 
-const k = '/pk/test';
+// const k = '/pk/test';
+const k = 'test';
 const v = 'a';
 let node = await init();
 node.services.dht.contentFetching.log.enabled = true;
-await putKeyValue(node, k, v);
-await getValue(node, k);
-// console.log(await node.services.dht.validators.pk());
 
-// let node2 = await init();
-// await new Promise(r => setTimeout(r, 2000));
-// console.log('node2 stuff');
+let node2 = await init();
+node2.services.dht.contentFetching.log.enabled = true;
+await new Promise(r => setTimeout(r, 2000));
 // console.log(node2.services.dht.getMode());
-// await getValue(node2, k);
+await putKeyValue(node, k, v);
+
+await getValue(node, k);
+await getValue(node2, k);
 
 // await cli(node);
