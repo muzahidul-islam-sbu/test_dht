@@ -71,7 +71,6 @@ async function init() {
     });
 
     // Start the DHT
-    node.services.dht.log.enabled = true;
     await node.services.dht.start();
     await node.services.dht.setMode('server');
     await node.start();
@@ -172,21 +171,29 @@ async function getValue(node, key) {
     }
 }
 
-// import { createHash } from 'crypto';
-// const hash = createHash('sha256').update('test').digest('hex');
-// const k = '/pk/' + hash;
+async function getLocal(node, key) {
+    console.log("trying get local value...");
+    const keyencode = new TextEncoder('utf8').encode(key);
+    let a = await node.services.dht.contentFetching.getLocal(keyencode);
+    console.log(a);
+}
 
-const k = '/test/test';
+// import { createHash } from 'crypto';
+// const hash = createHash('sha256').update('test').digest()
+// const hashk = '/pk/' + hash;
+
+const k = '/pk/test';
 const v = 'a';
 let node = await init();
+node.services.dht.contentFetching.log.enabled = true;
 await putKeyValue(node, k, v);
 await getValue(node, k);
-await node.services.dht.setMode('server');
+// console.log(await node.services.dht.validators.pk());
 
-let node2 = await init();
-await new Promise(r => setTimeout(r, 2000));
-console.log('node2 stuff');
-console.log(node2.services.dht.getMode());
-await getValue(node2, k);
+// let node2 = await init();
+// await new Promise(r => setTimeout(r, 2000));
+// console.log('node2 stuff');
+// console.log(node2.services.dht.getMode());
+// await getValue(node2, k);
 
 // await cli(node);
