@@ -8,11 +8,17 @@ import { tcp } from '@libp2p/tcp'
 import { createLibp2p } from 'libp2p'
 import { mdns } from '@libp2p/mdns'
 import readline from 'readline'
+import axios from 'axios'
+
+
+let ip_response = await axios.get('https://api.ipify.org?format=json')
+const PORT = 5556;                                          // CHANGE PORT HERE
+const PUBLIC_IP = ip_response.data.ip;
 
 const node = await createLibp2p({
     addresses: {
-        listen: ['/ip4/0.0.0.0/tcp/0'],
-        // announce: ['/ip4/72.229.181.210/tcp/0']
+        listen: [`/ip4/0.0.0.0/tcp/${PORT}`],
+        announce: [`/ip4/${PUBLIC_IP}/tcp/${PORT}`]         // COMMENT OUT TO MAKE CLIENT, UNCOMMENT TO MAKE SERVER
     },
     transports: [tcp()],
     streamMuxers: [yamux(), mplex()],
