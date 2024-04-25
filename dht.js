@@ -17,7 +17,7 @@ async function createNode() {
         services: {
             dht: kadDHT({
                 kBucketSize: 20,
-                allowQueryWithZeroPeers: true,
+                allowQueryWithZeroPeers: false,
                 querySelfInterval: 10,
                 peerInfoMapper: removePublicAddressesMapper,
                 protocol: '/ipfs/lan/kad/1.0.0'
@@ -42,6 +42,12 @@ import readline from 'readline'
 import { getPackedSettings } from 'http2'
 async function init() {
     const node = await createNode();
+
+    // Log peer events
+    node.addEventListener('peer', (connection) => {
+        console.log('\n\n\nTHERE WAS A PEER EVENT\n\n\n' + connection);
+    });
+
     const discoveredPeerIds = []
     // Log peer discovery events
     node.addEventListener('peer:discovery', (connection) => {
@@ -51,14 +57,14 @@ async function init() {
 
     // Log peer connection events
     node.addEventListener('peer:connect', async (connection) => {
-        console.log('Connected to peer:', connection, connection.detail, connection.detail.multiaddrs);
+        console.log(node.peerId, 'Connected to peer:', connection.detail);
 
         let retrievedValue = node.services.dht.findPeer(connection.detail);
         for await (const queryEvent of retrievedValue) {
             console.log('dht:connect', queryEvent)
         }
 
-        await node.dial(connection.detail)
+        // await node.dial(connection.detail);
     });
 
     node.addEventListener(EventTypes.VALUE, () => {
@@ -71,6 +77,12 @@ async function init() {
     });
 
     // Start the DHT
+    node.services.dht.log.enabled = true;
+    node.services.dht.contentFetching.log.enabled = true;
+    node.services.dht.peerRouting.log.enabled = true;
+    node.services.dht.network.log.enabled = true;
+    node.services.dht.topologyListener.log.enabled = true;
+
     await node.services.dht.start();
     await node.services.dht.setMode('server');
     await node.start();
@@ -96,7 +108,7 @@ async function cli(node) {
                     break;
                 }
                 await putKeyValue(node, args[0], args[1]);
-                await node.services.dht.refreshRoutingTable()
+                await node.services.dht.refreshRoutingTable();
                 break;
             case 'get':
                 if (args.length !== 1) {
@@ -152,6 +164,7 @@ async function putKeyValue(node, key, value) {
         for await (const queryEvent of retrievedValue) {
             console.log('dht:put', queryEvent)
         }
+        await node.services.dht.refreshRoutingTable();
     } catch (err) {
         throw err;
     }
@@ -159,6 +172,7 @@ async function putKeyValue(node, key, value) {
 
 async function getValue(node, key) {
     console.log("trying get value...");
+    await node.services.dht.refreshRoutingTable();
     const keyUint8Array = new TextEncoder('utf8').encode(key);
     let retrievedValue;
     retrievedValue = node.services.dht.getClosestPeers(keyUint8Array)
@@ -171,13 +185,6 @@ async function getValue(node, key) {
     }
 }
 
-async function getLocal(node, key) {
-    console.log("trying get local value...");
-    const keyencode = new TextEncoder('utf8').encode(key);
-    let a = await node.services.dht.contentFetching.getLocal(keyencode);
-    console.log(a);
-}
-
 // import { createHash } from 'crypto';
 // const hash = createHash('sha256').update('test').digest()
 // const hashk = '/pk/' + hash;
@@ -186,17 +193,18 @@ async function getLocal(node, key) {
 const k = 'test';
 const v = 'a';
 let node = await init();
-node.services.dht.contentFetching.log.enabled = true;
-node.services.dht.peerRouting.log.enabled = true;
 
 let node2 = await init();
-node2.services.dht.contentFetching.log.enabled = true;
-node2.services.dht.peerRouting.log.enabled = true;
-await new Promise(r => setTimeout(r, 2000));
-// console.log(node2.services.dht.getMode());
-await putKeyValue(node, k, v);
-
-await getValue(node, k);
-await getValue(node2, k);
+await new Promise(r => setTimeout(r, 1000));
+// await node.services.dht.refreshRoutingTable();
+// await node2.services.dht.refreshRoutingTable();
+await new Promise(r => setTimeout(r, 1000));
+// console.log(node.services.dht.routingTable.kb.root);
+// console.log(node2.services.dht.routingTable.kb.root);
+// console.log(node.services.dht.routingTable.size);
+// console.log(node2.services.dht.routingTable.size);
+// await putKeyValue(node, k, v);
+// await getValue(node, k);
+// await getValue(node2, k);
 
 // await cli(node);
