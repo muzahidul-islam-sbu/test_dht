@@ -11,7 +11,8 @@ import readline from 'readline'
 
 const node = await createLibp2p({
     addresses: {
-        listen: ['/ip4/0.0.0.0/tcp/0']
+        listen: ['/ip4/0.0.0.0/tcp/0'],
+        // announce: ['/ip4/72.229.181.210/tcp/0']
     },
     transports: [tcp()],
     streamMuxers: [yamux(), mplex()],
