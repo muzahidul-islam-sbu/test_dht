@@ -6,10 +6,11 @@ import { kadDHT, removePrivateAddressesMapper, EventTypes, removePublicAddresses
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { bootstrap } from '@libp2p/bootstrap'
 
-async function createNode() {
+async function createNode(port) {
     const node = await createLibp2p({
         addresses: {
-            listen: ['/ip4/0.0.0.0/tcp/0']
+            listen: ['/ip4/0.0.0.0/tcp/0'],
+            announce: [`/ip4/127.0.0.1/tcp/${port}`]
         },
         transports: [tcp()],
         streamMuxers: [yamux()],
@@ -20,7 +21,8 @@ async function createNode() {
                 allowQueryWithZeroPeers: false,
                 querySelfInterval: 10,
                 peerInfoMapper: removePublicAddressesMapper,
-                protocol: '/ipfs/lan/kad/1.0.0'
+                protocol: '/ipfs/lan/kad/1.0.0',
+                clientMode: false
             })
         },
         peerDiscovery: [
@@ -40,8 +42,8 @@ async function createNode() {
 
 import readline from 'readline'
 import { getPackedSettings } from 'http2'
-async function init() {
-    const node = await createNode();
+async function init(port) {
+    const node = await createNode(port);
 
     // Log peer events
     node.addEventListener('peer', (connection) => {
@@ -189,16 +191,15 @@ async function getValue(node, key) {
 // const hash = createHash('sha256').update('test').digest()
 // const hashk = '/pk/' + hash;
 
-// const k = '/pk/test';
-const k = 'test';
-const v = 'a';
-let node = await init();
-
-let node2 = await init();
-await new Promise(r => setTimeout(r, 1000));
+// const k = 'test';
+// const k = 'test';
+// const v = 'a';
+// let node = await init(600);
+// let node2 = await init(700);
+// await new Promise(r => setTimeout(r, 1000));
 // await node.services.dht.refreshRoutingTable();
 // await node2.services.dht.refreshRoutingTable();
-await new Promise(r => setTimeout(r, 1000));
+// await new Promise(r => setTimeout(r, 1000));
 // console.log(node.services.dht.routingTable.kb.root);
 // console.log(node2.services.dht.routingTable.kb.root);
 // console.log(node.services.dht.routingTable.size);
@@ -207,4 +208,5 @@ await new Promise(r => setTimeout(r, 1000));
 // await getValue(node, k);
 // await getValue(node2, k);
 
-// await cli(node);
+let node = await init(process.argv[2]);
+await cli(node);
