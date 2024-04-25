@@ -187,9 +187,11 @@ const k = 'test';
 const v = 'a';
 let node = await init();
 node.services.dht.contentFetching.log.enabled = true;
+node.services.dht.peerRouting.log.enabled = true;
 
 let node2 = await init();
 node2.services.dht.contentFetching.log.enabled = true;
+node2.services.dht.peerRouting.log.enabled = true;
 await new Promise(r => setTimeout(r, 2000));
 // console.log(node2.services.dht.getMode());
 await putKeyValue(node, k, v);
