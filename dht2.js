@@ -14,6 +14,9 @@ import axios from 'axios'
 let ip_response = await axios.get('https://api.ipify.org?format=json')
 const PORT = 5556;                                          // CHANGE PORT HERE
 const PUBLIC_IP = ip_response.data.ip;
+import { CID } from 'multiformats/cid'
+import { sha256 } from 'multiformats/hashes/sha2'
+import * as json from 'multiformats/codecs/json'
 
 const node = await createLibp2p({
     addresses: {
@@ -24,9 +27,9 @@ const node = await createLibp2p({
     streamMuxers: [yamux(), mplex()],
     connectionEncryption: [noise()],
     peerDiscovery: [
-        // bootstrap({
-        //   list: bootstrappers
-        // }),
+        bootstrap({
+          list: ['/ip4/72.229.181.210/tcp/5555/p2p/12D3KooWFQ8XWQPfjVUPFkvkLY6R8snUQDgFshV1Fvobq7qHk88W']
+        }),
         mdns()
     ],
     services: {
@@ -70,11 +73,30 @@ async function putKeyValue(node, key, value) {
 
 async function getValue(node, key) {
     const keyUint8Array = new Uint8Array(Buffer.from(key));
-    for await (const queryEvent of node.services.kadDHT.getClosestPeers(keyUint8Array)) {
-        console.log('dht:peerRouting', queryEvent)
-    }
     for await (const queryEvent of node.services.kadDHT.get(keyUint8Array)) {
+        if (queryEvent.hasOwnProperty('name') &&  queryEvent['name'] == 'VALUE') {
+            const value = queryEvent['value'].toString();
+            console.log('value:', value)
+        }
         console.log('dht:get', queryEvent)
+    }
+}
+
+async function provide(node, key) {
+    const bytes = json.encode({key: key}); 
+    const hash = await sha256.digest(bytes);
+    const cid = CID.create(1, json.code, hash); 
+    for await (const queryEvent of node.services.kadDHT.provide(cid)) {
+        console.log('dht:provide', queryEvent)
+    }
+}
+
+async function getProviders(node, key) {
+    const bytes = json.encode({key: key}); 
+    const hash = await sha256.digest(bytes);
+    const cid = CID.create(1, json.code, hash); 
+    for await (const queryEvent of node.services.kadDHT.findProviders(cid)) {
+        console.log('dht:getProviders', queryEvent)
     }
 }
 
@@ -106,6 +128,21 @@ async function cli(node) {
                 }
                 await node.services.kadDHT.refreshRoutingTable();
                 await getValue(node, args[0]);
+                break;
+            case 'provide':
+                if (args.length !== 1) {
+                    console.error('Usage: provide <key>');
+                    break;
+                }
+                await provide(node, args[0]);
+                break;
+            case 'getProviders':
+                if (args.length !== 1) {
+                    console.error('Usage: get <key>');
+                    break;
+                }
+                await node.services.kadDHT.refreshRoutingTable();
+                await getProviders(node, args[0]);
                 break;
             case 'get_mode':
                 if (args.length !== 0) {
@@ -144,5 +181,6 @@ async function cli(node) {
 }
 
 console.log(node.peerId)
+node.getMultiaddrs().forEach((multi) => console.log(multi))
 node.services.kadDHT.contentFetching.log.enabled = true;
 cli(node)
